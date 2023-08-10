@@ -6,4 +6,4 @@ Export your playlist from Spotify with something like [Spotlistr](https://www.sp
 
 Go into ViMusic, export a backup, and rename it to `database.db`
 
-Put both of these files in the same folder as `spotifytovimusic.py`, install run `pip ytmusicapi thefuzz cutlet`, and run the python script. Once its done you can reimport the database into ViMusic
+Put both of these files in the same folder as `spotifytovimusic.py`, run `pip ytmusicapi thefuzz cutlet`, and run the python script. Once its done you can reimport the database into ViMusic
