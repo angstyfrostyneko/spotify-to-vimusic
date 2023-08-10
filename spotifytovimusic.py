@@ -2,6 +2,7 @@ import sqlite3
 import cutlet
 from ytmusicapi import YTMusic
 from thefuzz import fuzz
+import time
 
 con = sqlite3.connect('database.db')
 cur = con.cursor()
@@ -9,11 +10,12 @@ cur = con.cursor()
 katsu = cutlet.Cutlet()
 yt = YTMusic()
 song_list = open('songlist.txt', 'r', encoding='utf-8')
+base_timestamp = round(time.time() * 1000)
 
 song_count = 0
 
 def insert_into_DB(songID, duration, albumID):
-    timestamp = 1677523172786 - 2000 * song_count
+    timestamp = base_timestamp - 2000 * song_count
 
     search = yt.get_song(songID)
     title = search['videoDetails']['title'].replace('"', "'")
