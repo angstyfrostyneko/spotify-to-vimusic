@@ -5,7 +5,7 @@ from ytmusicapi import YTMusic
 from thefuzz import fuzz
 
 
-def insert_into_db(song_id, duration, album_id, playlist_position, is_video = False):
+def insert_into_db(song_id, duration, album_id, playlist_ids, playlist_positions, is_video = False):
     timestamp = base_timestamp - 2000 * found_song_count
 
     search = yt.get_song(song_id)
@@ -36,8 +36,8 @@ def insert_into_db(song_id, duration, album_id, playlist_position, is_video = Fa
         share_url = f"https://music.youtube.com/playlist?list={album['audioPlaylistId']}"
 
         album_index = 0
-        for i in album['tracks']:
-            if i['title'] is title:
+        for track in album['tracks']:
+            if track['title'] is title:
                 break
             album_index += 1
 
@@ -54,9 +54,9 @@ def insert_into_db(song_id, duration, album_id, playlist_position, is_video = Fa
         cur.execute(
             f"""INSERT OR IGNORE INTO SongAlbumMap VALUES("{song_id}", "{album_id}", "{album_index}")""")
     # Adds song to playlist 3 (subfavs)
-    if PLAYLIST_ID is not None:
+    for (i, playlist_id) in enumerate(playlist_ids):
         cur.execute(
-            f"""INSERT OR IGNORE INTO SongPlaylistMap VALUES("{song_id}", "{PLAYLIST_ID}", "{playlist_position}")""")
+            f"""INSERT OR IGNORE INTO SongPlaylistMap VALUES("{song_id}", "{playlist_id}", "{playlist_positions[i]}")""")
     con.commit()
 
 
@@ -86,11 +86,13 @@ def find_match(results, title, artist_name):
     return False
 
 
-def add_song(result, found_song_count):
+def add_song(result, playlist_ids, playlist_positions):
     album_id = result['album']['id'] if 'album' in result and result['album'] is not None else None
     # found_song_count is the position in the playlist
     insert_into_db(result['videoId'], result['duration'],
-                   album_id, found_song_count)
+                   album_id, playlist_ids, playlist_positions)
+    for playlist_position in playlist_positions:
+        playlist_position += 1
 
 
 def format_raw_song(raw_title, raw_artist_name):
@@ -112,20 +114,30 @@ song_list = open('songlist.txt', 'r', encoding='utf-8')
 base_timestamp = round(time.time() * 1000)
 
 
-PLAYLIST_ID = 1  # "None" does not add songs to a playlist
 MAX_SEARCH_RESULTS = 10
 
 TOTAL_SONG_COUNT = len(song_list.readlines())  # total songs in songlist.txt
 song_list.seek(0)  # reset file pointer so that it can be read again
 
 
-# if PLAYLIST_ID is not None, get the last song's position to append the new ones
-# to the playlist in "the correct order"
-if PLAYLIST_ID is not None:
-    position_result = cur.execute(
-        f"""SELECT * FROM SongPlaylistMap WHERE playlistId = {PLAYLIST_ID} ORDER BY position DESC LIMIT 1""").fetchone()
-    if position_result is not None:
-        playlist_position = int(position_result[2]) + 1
+database_playlists = cur.execute("""SELECT id, name FROM Playlist""").fetchall()
+playlist_ids = []
+playlist_positions = []
+if len(database_playlists) > 0:
+    print("Playlists were detected in the database:")
+    for (i, [playlist_id, playlist_name]) in enumerate(database_playlists):
+        print("    " + f"({i+1}): {playlist_name}")
+    playlist_ids_str = input("Select playlist id(s) (separated by commas) to add songs to the corresponding playlist(s) (or leave blank to skip): ")
+    input_playlist_ids = [int(playlist_id.strip())-1 for playlist_id in playlist_ids_str.split(",")]
+    print(input_playlist_ids)
+    if playlist_ids_str == "" or True in [True if playlist_id > len(database_playlists) or playlist_id < 0 else False for playlist_id in input_playlist_ids]:
+        print("Skipping...")
+    else:
+        for playlist_id in input_playlist_ids:
+            playlist_ids.append(database_playlists[playlist_id-1][1])
+            position_result = cur.execute(
+            f"""SELECT * FROM SongPlaylistMap WHERE playlistId = {playlist_id} ORDER BY position DESC LIMIT 1""").fetchone()
+            playlist_positions.append(int(position_result[2]) + 1 if position_result is not None else 0)
 
 # main -------------------------------------------------------
 
@@ -166,7 +178,7 @@ for (search_i, search) in enumerate(searches):
     result = find_match(results, raw_title, raw_artist_name)
     if result is not False:
         found_song_count += 1
-        add_song(result, found_song_count)
+        add_song(result, playlist_ids, playlist_positions)
         print("Added: " + format_song(result['title'], result['artists']))
     else:
         print("No match found for: " +
@@ -178,7 +190,7 @@ print(f"Added {found_song_count}/{TOTAL_SONG_COUNT} songs to vimusic database")
 print()
 
 still_not_found = []
-continue_input = input("Add by hand songs with no match (Y/n)? ").lower()
+continue_input = input("Add by hand songs with no match from the search result (Y/n)? ").lower()
 if continue_input == "y" or continue_input == "":
     for search_i in not_found:
         (raw_title, raw_artist_name, results) = searches[search_i]
@@ -187,45 +199,19 @@ if continue_input == "y" or continue_input == "":
         for (result_id, result) in enumerate(results):
             print(f"    ({result_id+1}): " +
                   format_song(result['title'], result['artists']))
-        result_id = input("Enter song id (leave blank to skip): ")
+        result_id = input("Enter the matching song id (leave blank to skip): ")
         if result_id == "" or int(result_id) >= len(results):
             print("Skipping...")
             still_not_found.append((raw_title, raw_artist_name))
         else:
             found_song_count += 1
             result = results[int(result_id)-1]
-            add_song(result, found_song_count)
+            add_song(result, playlist_ids, playlist_positions)
             print("Added: " + format_song(result['title'], result['artists']))
         print()
 
 print()
 if len(still_not_found) > 0:
-    print("Following songs were not found (have a good time adding them manually):")
+    print("Following songs were not found (have a good time matching videos by hand):")
     for (raw_title, raw_artist_name) in still_not_found:
         print("    " + format_raw_song(raw_title, raw_artist_name))
-
-# continue_input = input(
-#     "Would you like to search videos that would match songs that were not found even after manual search (Y/n)? ").lower()
-# if continue_input == "y" or continue_input == "":
-#     last_search_timestamp = time.time()
-#     for (raw_title, raw_artist_name) in search_video:
-#         time.sleep(max(0, 1 - last_search_timestamp - time.time()))
-#         print(f"Searching \"{raw_title} {raw_artist_name}\"")
-#         results = yt.search(f'{raw_title} {raw_artist_name}',
-#                             filter='videos', limit=MAX_SEARCH_RESULTS)
-#         last_search_timestamp = time.time()
-#         print("Video search results for: " +
-#               format_raw_song(raw_title, raw_artist_name))
-#         for (result_id, result) in enumerate(results):
-#             print(f"    ({result_id+1}): " +
-#                   format_song(result['title'], result['artists']))
-#         result_id = input("Enter song id (leave blank to skip): ")
-#         if result_id == "" or int(result_id) >= len(results):
-#             print("Skipping for good...")
-#         else:
-#             found_song_count += 1
-#             result = results[int(result_id)-1]
-#             print(result)
-#             add_song(result, found_song_count)
-#             print("Added: " + format_song(result['title'], result['artists']))
-#         print()
