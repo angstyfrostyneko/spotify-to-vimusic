@@ -130,7 +130,7 @@ if len(database_playlists) > 0:
     input_playlist_indexes_str = input(
         "Enter matching playlist id(s) separated by commas to add songs to the corresponding playlist(s) (or leave blank to skip): ")
     input_playlist_indexes = [playlist_id.strip()
-                          for playlist_id in input_playlist_indexes_str.split(",")]
+                              for playlist_id in input_playlist_indexes_str.split(",")]
 
     if len(input_playlist_indexes_str) > 0:
         for playlist_index in input_playlist_indexes:
